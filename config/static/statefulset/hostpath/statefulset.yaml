@@ -22,12 +22,15 @@ spec:
       automountServiceAccountToken: true
       containers:
       - name: main
-        image: quay.io/freeipa/freeipa-openshift-container:freeipa-server
-        imagePullPolicy: IfNotPresent
+        # image: quay.io/freeipa/freeipa-openshift-container:freeipa-server
+        # image: quay.io/avisied0/freeipa-openshift-container:dev-8838140
+        # image: quay.io/avisied0/freeipa-openshift-container:freeipa-server
+        image: quay.io/avisied0/freeipa-openshift-container:dev-060f81d
+        imagePullPolicy: Always
         # SYSTEMD_LOG_LEVEL=debug INIT_WRAPPER=1 DEBUG_TRACE=2 PASSWORD=Secret123 NAMESPACE=freeipa SYSTEMD_OFFLINE=1 podman run -it quay.io/freeipa/freeipa-openshift-container:freeipa-server no-exit ipa-server-install -U --realm APPS.MYKUBE.KARMALABS.COM --ca-subject="CN=freeipa-11111, O=APPS.MYKUBE.KARMALABS.COM" --no-ntp --no-sshd --no-ssh --verbose
         # podman run -it -e SYSTEMD_LOG_LEVEL=debug -e INIT_WRAPPER=1 -e DEBUG_TRACE=2 -e PASSWORD=Secret123 -e NAMESPACE=freeipa -e SYSTEMD_OFFLINE=1  quay.io/freeipa/freeipa-openshift-container:freeipa-server no-exit ipa-server-install -U --realm APPS.MYKUBE.KARMALABS.COM --ca-subject="CN=freeipa-11111, O=APPS.MYKUBE.KARMALABS.COM" --no-ntp --no-sshd --no-ssh --verbose
         command:
-        - /usr/sbin/init
+        - /usr/local/sbin/init
         args:
         - no-exit
         - ipa-server-install
@@ -44,27 +47,47 @@ spec:
         - --no-ntp
         - --no-sshd
         - --no-ssh
-        - --verbose
-        # envFrom:
-        #   - name: IPA_SERVER_HOSTNAME
-        #     configMapRef:
-        #       name: config
               
         env:
-        - name: KRB5_TRACE
-          value: /dev/console
         - name: SYSTEMD_LOG_LEVEL
           value: debug
         - name: SYSTEMD_LOG_COLOR
           value: "no"
-        - name: INIT_WRAPPER
+        # FIXME INIT_WRAPPER is not needed anymore
+        #       Remove when the container image generated at
+        #       freeipa-openshift-container is properly bound to
+        #       the freeipa-operator workload.
+        # - name: INIT_WRAPPER
+        #   value: "1"
+        # FIXME Clean-up DEBUG when experimental stage is finished
+        # - name: DEBUG
+        #   value: "1"
+        # FIXME Clean-up KRB5_TRACE when experimental stage is finished
+        # - name: KRB5_TRACE
+        #   value: /dev/console
+        # Special behaviour for fqdn hostname is needed in k8s by setting
+        # this variable.
+        - name: KUBERNETES
           value: "1"
-        - name: DEBUG_TRACE
-          value: "2"
-        - name: PASSWORD
+        # FIXME Clean-up PASSWORD when the workload works as expected
+        # - name: PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       key: IPA_SERVER_PASSWORD
+        #       name: freeipa
+        #       optional: false
+        # Map ADMIN_PASSWORD from the secret
+        - name: ADMIN_PASSWORD
           valueFrom:
             secretKeyRef:
-              key: IPA_SERVER_PASSWORD
+              key: IPA_SERVER_ADMIN_PASSWORD
+              name: freeipa
+              optional: false
+        # Map DS_PASSWORD from the secret
+        - name: DS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: IPA_SERVER_DS_PASSWORD
               name: freeipa
               optional: false
         - name: NAMESPACE
@@ -73,10 +96,14 @@ spec:
           value: $(IPA_SERVER_HOSTNAME)
         - name: container_uuid
           value: b01e51533bce49ce92b6bd4680edd46e
+        # FIXME Set this to "0"; ftweedal figured out this variable is avoiding
+        #       to execute systemctl from a terminal inside the container
+        #       More info at: https://systemd.io/ENVIRONMENT/
         - name: SYSTEMD_OFFLINE
           value: "1"
         - name: SYSTEMD_NSPAWN_API_VFS_WRITABLE
           value: network
+
         ports:
         - containerPort: 80
           name: http-tcp
@@ -84,6 +111,7 @@ spec:
         - containerPort: 443
           name: https-tcp
           protocol: TCP
+
         resources:
           limits:
             cpu: 2000m
@@ -91,6 +119,7 @@ spec:
           requests:
             cpu: 1500m
             memory: 3Gi
+
         securityContext:
           capabilities:
             add:
@@ -131,12 +160,12 @@ spec:
             - SYS_TTY_CONFIG
             - SYSLOG
             - WAKE_ALARM
-            - SYS_RAWIO
             - MKNOD
           privileged: false
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         tty: true
+
         volumeMounts:
         - name: freeipa
           mountPath: /data
@@ -146,6 +175,7 @@ spec:
           name: systemd-var-run
         - mountPath: /var/run/dirsrv
           name: systemd-var-dirsrv
+
       volumes:
       - emptyDir:
           medium: Memory
